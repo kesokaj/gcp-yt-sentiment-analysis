@@ -1,0 +1,102 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>YouTube Analysis Runner</title>
+    <style>
+        body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; line-height: 1.6; color: #333; max-width: 800px; margin: 2rem auto; padding: 0 1rem; background-color: #f4f4f9; }
+        h1 { color: #1a1a1a; }
+        #urlForm { display: flex; gap: 0.5rem; margin-bottom: 1.5rem; }
+        #youtubeUrl { flex-grow: 1; padding: 0.75rem; border: 1px solid #ccc; border-radius: 6px; font-size: 1rem; }
+        #submitBtn { padding: 0.75rem 1.5rem; border: none; background-color: #007bff; color: white; border-radius: 6px; font-size: 1rem; cursor: pointer; transition: background-color 0.2s; }
+        #submitBtn:hover { background-color: #0056b3; }
+        #submitBtn:disabled { background-color: #a0a0a0; cursor: not-allowed; }
+        #status { background-color: #fff; border: 1px solid #e0e0e0; border-radius: 6px; padding: 1rem; min-height: 100px; white-space: pre-wrap; font-family: "SF Mono", "Fira Code", "Fira Mono", "Roboto Mono", monospace; font-size: 0.9rem; }
+        .log-entry { padding: 0.5rem; border-bottom: 1px solid #eee; }
+        .log-entry:last-child { border-bottom: none; }
+        .status-processing { color: #555; }
+        .status-success { color: #28a745; }
+        .status-error { color: #dc3545; font-weight: bold; }
+        .status-complete { color: #007bff; font-weight: bold; }
+    </style>
+</head>
+<body>
+
+    <h1>YouTube Analysis Service</h1>
+    <p>Paste a full YouTube video link below and click "Run" to start the analysis process.</p>
+
+    <form id="urlForm">
+        <input type="url" id="youtubeUrl" placeholder="https://www.youtube.com/watch?v=dQw4w9WgXcQ" required>
+        <button type="submit" id="submitBtn">Run</button>
+    </form>
+
+    <h2>Live Status</h2>
+    <div id="status"></div>
+
+    <script>
+        const form = document.getElementById('urlForm');
+        const urlInput = document.getElementById('youtubeUrl');
+        const submitBtn = document.getElementById('submitBtn');
+        const statusDiv = document.getElementById('status');
+        let eventSource;
+
+        form.addEventListener('submit', (e) => {
+            e.preventDefault();
+            if (eventSource) {
+                eventSource.close();
+            }
+
+            const youtubeUrl = urlInput.value;
+            if (!youtubeUrl) {
+                addLog({ status: 'error', message: 'Please enter a YouTube URL.' });
+                return;
+            }
+
+            submitBtn.disabled = true;
+            statusDiv.innerHTML = '';
+
+            const encodedUrl = encodeURIComponent(youtubeUrl);
+            eventSource = new EventSource(`/ui/process?url=${encodedUrl}`);
+
+            eventSource.onmessage = (event) => {
+                try {
+                    const data = JSON.parse(event.data);
+                    addLog(data);
+                    if (data.status === 'complete' || data.status === 'error') {
+                        eventSource.close();
+                        submitBtn.disabled = false;
+                    }
+                } catch (error) {
+                    addLog({ status: 'error', message: 'Received invalid data from server.' });
+                    console.error('Error parsing SSE data:', error);
+                    eventSource.close();
+                    submitBtn.disabled = false;
+                }
+            };
+
+            eventSource.onerror = () => {
+                addLog({ status: 'error', message: 'Connection to server lost. Please try again.' });
+                eventSource.close();
+                submitBtn.disabled = false;
+            };
+        });
+
+        function addLog(data) {
+            const entry = document.createElement('div');
+            entry.className = 'log-entry';
+            
+            let statusClass = 'status-processing';
+            if (data.status === 'success') statusClass = 'status-success';
+            if (data.status === 'error') statusClass = 'status-error';
+            if (data.status === 'complete') statusClass = 'status-complete';
+
+            entry.classList.add(statusClass);
+            entry.textContent = `[${new Date().toLocaleTimeString()}] ${data.message || JSON.stringify(data)}`;
+            statusDiv.appendChild(entry);
+            statusDiv.scrollTop = statusDiv.scrollHeight;
+        }
+    </script>
+
+</body>
+</html>

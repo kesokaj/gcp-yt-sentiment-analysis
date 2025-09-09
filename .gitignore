@@ -1,0 +1,33 @@
+# Misc stuff
+GEMINI.md
+env.yaml
+
+# Go mod/sum
+go.mod
+go.sum
+
+# Go module cache
+.cache/
+
+# VS Code settings
+.vscode/
+
+# IDE specific files
+.idea/
+*.iml
+*.ipr
+*.iws
+
+# Operating System files
+.DS_Store
+Thumbs.db
+
+# Test results
+*.test
+*.out
+
+# Build artifacts
+*.exe
+*.dll
+*.so
+*.dylib
