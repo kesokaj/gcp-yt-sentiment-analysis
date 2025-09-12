@@ -10,12 +10,37 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"log"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
 	"strings"
 )
+
+// Info serves the API information page.
+func Info(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+	w.WriteHeader(http.StatusOK)
+	fmt.Fprintln(w, "YouTube Analysis Service Endpoints:")
+	fmt.Fprintln(w, "")
+	fmt.Fprintln(w, "1. /youtube?videoId=<YOUTUBE_VIDEO_ID>[&trackingId=<UUID>]")
+	fmt.Fprintln(w, "   - Fetches video details, statistics, and the most relevant comments for the given YouTube video ID.")
+	fmt.Fprintln(w, "   - Generates a unique 'trackingId' if one is not provided.")
+	fmt.Fprintln(w, "   - Saves the complete data as a JSON file to GCS: gs://<bucket>/<trackingId>.json")
+	fmt.Fprintln(w, "")
+	fmt.Fprintln(w, "2. /magic?trackingId=<TRACKING_ID>")
+	fmt.Fprintln(w, "   - Retrieves the JSON file from GCS using the 'trackingId'.")
+	fmt.Fprintln(w, "   - Sends the data to the Gemini API for a comprehensive marketing and sentiment analysis.")
+	fmt.Fprintln(w, "   - Saves the resulting analysis as a new JSON file to GCS: gs://<bucket>/<trackingId>_analyzed.json")
+	fmt.Fprintln(w, "")
+	fmt.Fprintln(w, "3. /ingest?trackingId=<TRACKING_ID>")
+	fmt.Fprintln(w, "   - Reads both the raw data (<trackingId>.json) and the analyzed data (<trackingId>_analyzed.json) from GCS.")
+	fmt.Fprintln(w, "   - Ingests the raw data into the 'videos' and 'comments' tables in BigQuery.")
+	fmt.Fprintln(w, "   - Ingests the analyzed data into the 'analyzed' table in BigQuery.")
+	fmt.Fprintln(w, "   - The endpoint is idempotent and will not re-ingest data if the trackingId already exists.")
+	fmt.Fprintln(w, "")
+	fmt.Fprintln(w, "4. /ui")
+	fmt.Fprintln(w, "   - Serves a web interface to run the full analysis pipeline.")
+}
 
 // ServeUI serves the main HTML page for the user interface.
 func ServeUI(w http.ResponseWriter, r *http.Request) {
@@ -49,7 +74,7 @@ func ProcessHandler(w http.ResponseWriter, r *http.Request) {
 
 	ctx := r.Context()
 
-	// --- Step 1: Fetch YouTube Data ---
+	// ---	Step 1: Fetch YouTube Data ---
 	sendSSEMessage(w, flusher, map[string]string{"status": "processing", "message": "Step 1/3: Fetching YouTube data..."})
 	youtubeEndpoint := fmt.Sprintf("/youtube?videoId=%s", videoID)
 	var step1Response models.APIResponse
@@ -67,7 +92,7 @@ func ProcessHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	sendSSEMessage(w, flusher, map[string]string{"status": "processing", "message": fmt.Sprintf("Next action: %s", nextAction)})
 
-	// --- Step 2: Analyze with Gemini ---
+	// ---	Step 2: Analyze with Gemini ---
 	sendSSEMessage(w, flusher, map[string]string{"status": "processing", "message": "Step 2/3: Analyzing data with Gemini..."})
 	var step2Response models.APIResponse
 	if err := callHandler(ctx, gemini_magic.AnalyzeData(&shared.AppConfig), nextAction, &step2Response); err != nil {
@@ -84,7 +109,7 @@ func ProcessHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	sendSSEMessage(w, flusher, map[string]string{"status": "processing", "message": fmt.Sprintf("Next action: %s", nextAction)})
 
-	// --- Step 3: Ingest into BigQuery ---
+	// ---	Step 3: Ingest into BigQuery ---
 	sendSSEMessage(w, flusher, map[string]string{"status": "processing", "message": "Step 3/3: Ingesting data into BigQuery..."})
 	var step3Response models.APIResponse
 	if err := callHandler(ctx, bq_ingest.IngestData(&shared.AppConfig), nextAction, &step3Response); err != nil {
@@ -126,7 +151,7 @@ func callHandler(ctx context.Context, handler http.HandlerFunc, targetURL string
 func sendSSEMessage(w http.ResponseWriter, flusher http.Flusher, data interface{}) {
 	jsonData, err := json.Marshal(data)
 	if err != nil {
-		log.Printf(`{"message": "Failed to marshal SSE data: %v", "severity": "ERROR"}`, err)
+		shared.Logger.Error("Failed to marshal SSE data", "error", err)
 		return
 	}
 

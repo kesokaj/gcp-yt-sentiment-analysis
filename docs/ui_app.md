@@ -1,29 +1,38 @@
-# UI Application for YouTube Analysis
+# UI Application
 
-## Overview
+**Package:** `pkgs/ui_handler`
+**File:** `handler.go`
 
-The YouTube Analysis Service includes an integrated web-based UI. It allows a user to initiate the entire three-step analysis pipeline (fetch, analyze, ingest) by simply providing a YouTube video URL. The interface displays the progress of each step in real-time.
+This package provides the web interface for the application.
 
-## How to Use
+## Handlers
 
-### 1. Run the Main Application
+### `Info(w http.ResponseWriter, r *http.Request)`
 
-Follow the instructions in the main `README.md` to build and run the service. No separate UI server is needed.
+Serves a plain text page with information about the available API endpoints.
 
-### 2. Access the UI
+**Endpoint:** `/`
 
-Once the main service is running (either locally or on Cloud Run), open your web browser and navigate to the `/ui` endpoint.
+### `ServeUI(w http.ResponseWriter, r *http.Request)`
 
-- **Locally**: `http://localhost:8080/ui`
-- **On Cloud Run**: `https://your-backend-service-url.run.app/ui`
+Serves the main HTML page for the user interface from `web/ui.html`.
 
--   Paste a full YouTube video URL into the input field.
--   Click the "Run" button.
--   The "Live Status" section will display real-time updates as the backend processes each step.
+**Endpoint:** `/ui`
 
-## Key Functions
+### `ProcessHandler(w http.ResponseWriter, r *http.Request)`
 
-The UI functionality is handled by the `pkgs/ui_handler` package within the main service.
+Orchestrates the multi-step analysis pipeline and streams progress back to the client using Server-Sent Events (SSE).
 
--   **`ProcessHandler(...)`**: The core handler that manages the Server-Sent Events (SSE) connection. It receives the YouTube URL, extracts the video ID, and orchestrates the calls to the other service endpoints (`/youtube`, `/magic`, `/ingest`) in sequence, streaming status updates back to the client.
--   **`ServeUI(...)`**: Serves the `web/ui.html` file.
+**Endpoint:** `/ui/process`
+
+**Query Parameters:**
+
+*   `url` (required): The full URL of the YouTube video to be analyzed.
+
+**Logic:**
+
+1.  Extracts the video ID from the YouTube URL.
+2.  Calls the `/youtube` endpoint to fetch the video data.
+3.  Calls the `/magic` endpoint to perform the AI analysis.
+4.  Calls the `/ingest` endpoint to ingest the data into BigQuery.
+5.  Streams status updates for each step to the web UI.

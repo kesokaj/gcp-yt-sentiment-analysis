@@ -1,28 +1,40 @@
-# YouTube Data Fetcher
+# YouTube Fetcher
 
-## Overview
+**Package:** `pkgs/yt_video`
+**File:** `fetcher.go`
 
-This service endpoint is responsible for the first step in the analysis pipeline. It connects to the YouTube Data API v3 to fetch comprehensive data for a specific video, including its metadata, statistics, and comments.
+This service is responsible for fetching video and comment data from the YouTube Data API v3.
 
-The collected data is then consolidated into a single JSON file (`<trackingId>.json`) and uploaded to a Google Cloud Storage (GCS) bucket for subsequent processing by other services.
+## Functions
 
-## How to Use
+### `FetchData(cfg *models.AppConfig) http.HandlerFunc`
 
-The service is triggered by making a GET request to the `/youtube` endpoint.
+This is the main HTTP handler for the service. It takes a YouTube video ID, fetches the relevant data, and stores it in a JSON file in Google Cloud Storage (GCS).
 
-*   **Endpoint**: `GET /youtube`
-*   **Query Parameters**:
-    *   `videoId` (required): The unique ID of the YouTube video you want to analyze.
-    *   `trackingId` (optional): A UUID to track this specific job through the pipeline. If one is not provided, it will be generated automatically.
-*   **Example**:
-    ```bash
-    curl "http://localhost:8080/youtube?videoId=dQw4w9WgXcQ"
-    ```
+**Endpoint:** `/youtube`
 
-## Key Functions
+**Query Parameters:**
 
-*   **`yt_video.FetchData`**: This is the factory function that returns the main `http.HandlerFunc`. It orchestrates the entire process, from validating input parameters and fetching data from the YouTube API to uploading the final JSON result to GCS.
+*   `videoId` (required): The ID of the YouTube video.
+*   `trackingId` (optional): A unique identifier for the job. If not provided, a new UUID will be generated.
 
-*   **`yt_video.getYouTubeService`**: This function initializes and returns a singleton instance of the YouTube service client. It uses `sync.Once` to ensure the client is created only on the first request, improving performance for subsequent calls.
+**Logic:**
 
-*   **Comment Fetching Loop**: The handler fetches comments by ordering them by `relevance` to get the most impactful comments first. It iteratively calls the `CommentThreads.List` endpoint, but note that when ordering by relevance, the YouTube API may not return all available comments. The loop continues until the API stops providing more pages, the `MAX_COMMENTS_TO_FETCH` limit is reached, or a quota error occurs. This approach prioritizes comment quality over quantity for the analysis.
+1.  **Fetch Video Details**: Retrieves video metadata, including statistics and content details.
+2.  **Fetch Comments**: Fetches the most relevant comments for the video, up to the limit defined by the `MAX_COMMENTS_TO_FETCH` environment variable.
+3.  **Store in GCS**: Saves the combined video and comment data as a JSON file (`<trackingId>.json`) in the specified GCS bucket.
+
+## Usage
+
+```bash
+curl "http://localhost:8080/youtube?videoId=<your-video-id>"
+```
+
+## Error Handling
+
+Errors are wrapped with context using `fmt.Errorf` for detailed logging. The function handles common issues such as:
+
+*   Failure to create the YouTube service client.
+*   Errors calling the YouTube API, including quota exceeded errors.
+*   Failure to marshal the data to JSON.
+*   Errors uploading the data file to GCS.

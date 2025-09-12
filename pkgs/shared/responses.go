@@ -19,6 +19,6 @@ func JSONErrorResponse(w http.ResponseWriter, trackingID string, code int, messa
 	encoder := json.NewEncoder(w)
 	encoder.SetIndent("", "  ")
 	if err := encoder.Encode(response); err != nil {
-		LogJSON("ERROR", "FATAL: could not write JSON error response: "+err.Error(), trackingID)
+		Logger.Error("FATAL: could not write JSON error response", "error", err, "trackingId", trackingID)
 	}
 }

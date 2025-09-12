@@ -26,7 +26,10 @@ func getYouTubeService(ctx context.Context, apiKey string) (*youtube.Service, er
 	serviceOnce.Do(func() {
 		youtubeService, serviceErr = youtube.NewService(ctx, option.WithAPIKey(apiKey))
 	})
-	return youtubeService, serviceErr
+	if serviceErr != nil {
+		return nil, fmt.Errorf("youtube.NewService: %w", serviceErr)
+	}
+	return youtubeService, nil
 }
 
 func FetchData(cfg *models.AppConfig) http.HandlerFunc {
@@ -36,12 +39,12 @@ func FetchData(cfg *models.AppConfig) http.HandlerFunc {
 		if trackingID == "" {
 			trackingID = uuid.New().String()
 		}
-		shared.LogJSON("INFO", fmt.Sprintf("Received request: %s %s", r.Method, r.URL.String()), trackingID)
+		shared.Logger.Info("Received request", "method", r.Method, "url", r.URL.String(), "trackingId", trackingID)
 
 		runDate := time.Now().Format("2006-01-02")
 		videoId := r.URL.Query().Get("videoId")
 		if videoId == "" {
-			shared.LogJSON("WARNING", "Missing 'videoId' query parameter", trackingID)
+			shared.Logger.Warn("Missing 'videoId' query parameter", "trackingId", trackingID)
 			shared.JSONErrorResponse(w, trackingID, http.StatusBadRequest, "Missing 'videoId' query parameter")
 			return
 		}
@@ -50,7 +53,8 @@ func FetchData(cfg *models.AppConfig) http.HandlerFunc {
 
 		ytService, err := getYouTubeService(ctx, cfg.YTApiKey)
 		if err != nil {
-			shared.LogJSON("ERROR", "Unable to create YouTube service: "+err.Error(), trackingID)
+			err = fmt.Errorf("Unable to create YouTube service: %w", err)
+			shared.Logger.Error(err.Error(), "trackingId", trackingID)
 			shared.JSONErrorResponse(w, trackingID, http.StatusInternalServerError, "Internal Server Error: Unable to create YouTube service")
 			return
 		}
@@ -58,16 +62,17 @@ func FetchData(cfg *models.AppConfig) http.HandlerFunc {
 		videoCall := ytService.Videos.List([]string{"snippet", "contentDetails", "statistics"}).Id(videoId).Context(ctx)
 		videoResponse, err := videoCall.Do()
 		if err != nil {
-			shared.LogJSON("ERROR", "Error fetching video details: "+err.Error(), trackingID)
+			err = fmt.Errorf("Error fetching video details: %w", err)
+			shared.Logger.Error(err.Error(), "trackingId", trackingID)
 			shared.JSONErrorResponse(w, trackingID, http.StatusInternalServerError, "Failed to fetch video details")
 			return
 		}
 		if len(videoResponse.Items) == 0 {
-			shared.LogJSON("INFO", "Video not found for videoId: "+videoId, trackingID)
+			shared.Logger.Info("Video not found for videoId", "videoId", videoId, "trackingId", trackingID)
 			shared.JSONErrorResponse(w, trackingID, http.StatusNotFound, "Video not found")
 			return
 		}
-		shared.LogJSON("INFO", "Successfully fetched video details for videoId: "+videoId, trackingID)
+		shared.Logger.Info("Successfully fetched video details", "videoId", videoId, "trackingId", trackingID)
 
 		video := videoResponse.Items[0]
 
@@ -102,7 +107,7 @@ func FetchData(cfg *models.AppConfig) http.HandlerFunc {
 		videoChannelId := video.Snippet.ChannelId
 		nextPageToken := ""
 
-		shared.LogJSON("INFO", "Fetching comments ordered by 'relevance'. Note: This may not retrieve all available comments.", trackingID)
+		shared.Logger.Info("Fetching comments ordered by 'relevance'. Note: This may not retrieve all available comments.", "trackingId", trackingID)
 
 	FetchCommentsLoop:
 		for {
@@ -119,10 +124,11 @@ func FetchData(cfg *models.AppConfig) http.HandlerFunc {
 			response, err := call.Context(ctx).Do()
 			if err != nil {
 				if strings.Contains(err.Error(), "quotaExceeded") {
-					shared.LogJSON("WARNING", "YouTube API quota exceeded while fetching comments. Proceeding with fetched comments.", trackingID)
+					shared.Logger.Warn("YouTube API quota exceeded while fetching comments. Proceeding with fetched comments.", "trackingId", trackingID)
 					break FetchCommentsLoop
 				}
-				shared.LogJSON("ERROR", "Error fetching comments: "+err.Error(), trackingID)
+				err = fmt.Errorf("Error fetching comments: %w", err)
+				shared.Logger.Error(err.Error(), "trackingId", trackingID)
 				shared.JSONErrorResponse(w, trackingID, http.StatusInternalServerError, "Failed to fetch comments")
 				return
 			}
@@ -169,16 +175,17 @@ func FetchData(cfg *models.AppConfig) http.HandlerFunc {
 		}
 
 		if len(comments) >= cfg.MaxCommentsToFetch {
-			shared.LogJSON("INFO", fmt.Sprintf("Reached comment fetch limit. Processing %d comments.", cfg.MaxCommentsToFetch), trackingID)
+			shared.Logger.Info("Reached comment fetch limit. Processing comments.", "limit", cfg.MaxCommentsToFetch, "trackingId", trackingID)
 			comments = comments[:cfg.MaxCommentsToFetch]
 		}
 
 		data.Comments = comments
-		shared.LogJSON("INFO", fmt.Sprintf("Successfully fetched %d comments for videoId: %s", len(data.Comments), videoId), trackingID)
+		shared.Logger.Info("Successfully fetched comments", "count", len(data.Comments), "videoId", videoId, "trackingId", trackingID)
 
 		jsonData, err := json.Marshal(data)
 		if err != nil {
-			shared.LogJSON("ERROR", "Error marshalling data to JSON for GCS upload: "+err.Error(), trackingID)
+			err = fmt.Errorf("Error marshalling data to JSON for GCS upload: %w", err)
+			shared.Logger.Error(err.Error(), "trackingId", trackingID)
 			shared.JSONErrorResponse(w, trackingID, http.StatusInternalServerError, "Failed to marshal data for storage")
 			return
 		}
@@ -186,11 +193,12 @@ func FetchData(cfg *models.AppConfig) http.HandlerFunc {
 		objectName := trackingID + ".json"
 		err = shared.UploadToGCS(ctx, cfg.GCSBucketName, objectName, jsonData)
 		if err != nil {
-			shared.LogJSON("ERROR", "GCS upload failed: "+err.Error(), trackingID)
+			err = fmt.Errorf("GCS upload failed: %w", err)
+			shared.Logger.Error(err.Error(), "trackingId", trackingID)
 			shared.JSONErrorResponse(w, trackingID, http.StatusInternalServerError, "Failed to save data to GCS")
 			return
 		}
-		shared.LogJSON("INFO", fmt.Sprintf("Successfully uploaded data to gs://%s/%s", cfg.GCSBucketName, objectName), trackingID)
+		shared.Logger.Info("Successfully uploaded data to GCS", "bucket", cfg.GCSBucketName, "object", objectName, "trackingId", trackingID)
 
 		processingTime := time.Since(startTime)
 		nextActionURI := fmt.Sprintf("/magic?trackingId=%s", trackingID)
@@ -207,7 +215,8 @@ func FetchData(cfg *models.AppConfig) http.HandlerFunc {
 		encoder := json.NewEncoder(w)
 		encoder.SetIndent("", "  ")
 		if err := encoder.Encode(response); err != nil {
-			shared.LogJSON("ERROR", "Could not write JSON response: "+err.Error(), trackingID)
+			err = fmt.Errorf("Could not write JSON response: %w", err)
+			shared.Logger.Error(err.Error(), "trackingId", trackingID)
 		}
 	}
 }

@@ -100,7 +100,7 @@ const reducePrompt = `
 	    * **'community_management'**: A single string providing a specific tip for community engagement.
 	    * **'monetization_opportunities'**: An array of objects. Each object MUST have a 'category' (string, e.g., "Workwear Brands") and 'products' (an array of strings, e.g., ["BrandA", "BrandB"]).
 
-	**Final Output Constraint:** The final output must only be the minified JSON object containing the analytical fields: 'executive_summary', 'performance_metrics', 'audience_analysis', 'content_feedback', 'key_themes', 'engagement_highlights', 'swot_analysis', and 'actionable_recommendations'. Do NOT include 'tracking_id' or 'run_date' in your output, as they are handled programmatically.
+	**Final Output Constraint:** The final output must only be the minified JSON object containing the analytical fields: 'executive_summary', 'performance_metrics', 'audience_analysis', 'content_feedback', 'key_themes', 'engagement_highlights', 'swot_analysis', and 'actionable_recommendations'. Do NOT include 'tracking_id' or 'run_date' in your output, as they are handled programmatically. If you do not have enough information to populate a field, you MUST return the field with a default or empty value (e.g., an empty string "", an empty array [], or an object with empty fields); do NOT omit the field.
 	`
 
 func chunkComments(comments []*models.Comment, chunkSize int) [][]*models.Comment {
@@ -151,33 +151,33 @@ func AnalyzeData(cfg *models.AppConfig) http.HandlerFunc {
 		ctx := r.Context()
 		trackingID := r.URL.Query().Get("trackingId")
 		if trackingID == "" {
-			shared.LogJSON("WARNING", "Missing 'trackingId' query parameter", "")
+			shared.Logger.Warn("Missing 'trackingId' query parameter")
 			shared.JSONErrorResponse(w, "", http.StatusBadRequest, "Missing 'trackingId' query parameter")
 			return
 		}
 		runDate := time.Now().Format("2006-01-02")
-		shared.LogJSON("INFO", fmt.Sprintf("Received request: %s %s", r.Method, r.URL.String()), trackingID)
+		shared.Logger.Info("Received request", "method", r.Method, "url", r.URL.String(), "trackingId", trackingID)
 
 		objectName := fmt.Sprintf("%s.json", trackingID)
-		shared.LogJSON("INFO", fmt.Sprintf("Reading from gs://%s/%s", cfg.GCSBucketName, objectName), trackingID)
+		shared.Logger.Info("Reading from GCS", "bucket", cfg.GCSBucketName, "object", objectName, "trackingId", trackingID)
 		fileData, err := shared.GetFileFromGCS(ctx, cfg.GCSBucketName, objectName)
 		if err != nil {
-			shared.LogJSON("ERROR", fmt.Sprintf("could not get file from GCS (%s): %s", objectName, err), trackingID)
+			shared.Logger.Error("could not get file from GCS", "object", objectName, "error", err, "trackingId", trackingID)
 			shared.JSONErrorResponse(w, trackingID, http.StatusInternalServerError, "Failed to retrieve data file")
 			return
 		}
 
 		var fullData models.VideoData
 		if err := json.Unmarshal(fileData, &fullData); err != nil {
-			shared.LogJSON("ERROR", "could not unmarshal JSON: "+err.Error(), trackingID)
+			shared.Logger.Error("could not unmarshal JSON", "error", err, "trackingId", trackingID)
 			shared.JSONErrorResponse(w, trackingID, http.StatusInternalServerError, "Invalid data format")
 			return
 		}
-		shared.LogJSON("INFO", fmt.Sprintf("Successfully unmarshaled JSON data for video ID %s", fullData.ID), trackingID)
+		shared.Logger.Info("Successfully unmarshaled JSON data", "videoId", fullData.ID, "trackingId", trackingID)
 
 		client, err := genai.NewClient(ctx, option.WithAPIKey(cfg.GEMINIApiKey))
 		if err != nil {
-			shared.LogJSON("ERROR", "Failed to create Gemini client: "+err.Error(), trackingID)
+			shared.Logger.Error("Failed to create Gemini client", "error", err, "trackingId", trackingID)
 			shared.JSONErrorResponse(w, trackingID, http.StatusInternalServerError, "Failed to create Gemini client")
 			return
 		}
@@ -203,11 +203,11 @@ func AnalyzeData(cfg *models.AppConfig) http.HandlerFunc {
 			},
 		}
 
-		shared.LogJSON("INFO", fmt.Sprintf("Sending request to Gemini model '%s' for analysis...", cfg.GEMINIModel), trackingID)
+		shared.Logger.Info("Sending request to Gemini model for analysis...", "model", cfg.GEMINIModel, "trackingId", trackingID)
 
 		const commentChunkSize = 100
 		commentChunks := chunkComments(fullData.Comments, commentChunkSize)
-		shared.LogJSON("INFO", fmt.Sprintf("Split %d comments into %d chunks of size %d.", len(fullData.Comments), len(commentChunks), commentChunkSize), trackingID)
+		shared.Logger.Info("Split comments into chunks", "commentCount", len(fullData.Comments), "chunkCount", len(commentChunks), "chunkSize", commentChunkSize, "trackingId", trackingID)
 
 		limiter := rate.NewLimiter(rate.Every(600*time.Millisecond), 1)
 
@@ -238,7 +238,7 @@ func AnalyzeData(cfg *models.AppConfig) http.HandlerFunc {
 
 				mapPromptFormatted := fmt.Sprintf(mapPrompt, string(chunkDataBytes))
 
-				shared.LogJSON("INFO", fmt.Sprintf("Analyzing comment chunk %d/%d...", chunkIndex+1, len(commentChunks)), trackingID)
+				shared.Logger.Info("Analyzing comment chunk", "chunk", chunkIndex+1, "totalChunks", len(commentChunks), "trackingId", trackingID)
 				resp, err := model.GenerateContent(ctx, genai.Text(mapPromptFormatted))
 				if err != nil {
 					errChan <- fmt.Errorf("chunk %d Gemini error: %w", chunkIndex, err)
@@ -263,7 +263,7 @@ func AnalyzeData(cfg *models.AppConfig) http.HandlerFunc {
 
 		if len(errChan) > 0 {
 			for e := range errChan {
-				shared.LogJSON("ERROR", "Error during chunk analysis: "+e.Error(), trackingID)
+				shared.Logger.Error("Error during chunk analysis", "error", e, "trackingId", trackingID)
 			}
 			shared.JSONErrorResponse(w, trackingID, http.StatusInternalServerError, "One or more chunks failed analysis. See logs for details.")
 			return
@@ -274,11 +274,11 @@ func AnalyzeData(cfg *models.AppConfig) http.HandlerFunc {
 			analysisChunks = append(analysisChunks, analysis)
 		}
 		combinedAnalyses := "[" + strings.Join(analysisChunks, ",") + "]"
-		shared.LogJSON("INFO", "All chunks analyzed. Starting final reduction step.", trackingID)
+		shared.Logger.Info("All chunks analyzed. Starting final reduction step.", "trackingId", trackingID)
 
 		baseVideoDataBytes, err := json.Marshal(baseVideoData)
 		if err != nil {
-			shared.LogJSON("ERROR", "Failed to marshal base video data: "+err.Error(), trackingID)
+			shared.Logger.Error("Failed to marshal base video data", "error", err, "trackingId", trackingID)
 			shared.JSONErrorResponse(w, trackingID, http.StatusInternalServerError, "Failed to prepare data for final analysis")
 			return
 		}
@@ -288,11 +288,11 @@ func AnalyzeData(cfg *models.AppConfig) http.HandlerFunc {
 		const maxRetries = 3
 
 		for attempt := 1; attempt <= maxRetries; attempt++ {
-			shared.LogJSON("INFO", fmt.Sprintf("Attempt %d/%d: Generating final analysis from Gemini.", attempt, maxRetries), trackingID)
+			shared.Logger.Info("Generating final analysis from Gemini.", "attempt", attempt, "maxRetries", maxRetries, "trackingId", trackingID)
 			geminiStartTime := time.Now()
 			resp, err := model.GenerateContent(ctx, genai.Text(reducePromptFormatted))
 			if err != nil {
-				shared.LogJSON("WARNING", fmt.Sprintf("Attempt %d: Gemini API call failed: %s", attempt, err), trackingID)
+				shared.Logger.Warn("Gemini API call failed", "attempt", attempt, "error", err, "trackingId", trackingID)
 				if attempt == maxRetries {
 					shared.JSONErrorResponse(w, trackingID, http.StatusInternalServerError, fmt.Sprintf("Failed to generate content from Gemini after %d retries", maxRetries))
 					return
@@ -302,7 +302,7 @@ func AnalyzeData(cfg *models.AppConfig) http.HandlerFunc {
 			}
 
 			if len(resp.Candidates) == 0 || len(resp.Candidates[0].Content.Parts) == 0 {
-				shared.LogJSON("WARNING", fmt.Sprintf("Attempt %d: Received empty response from Gemini", attempt), trackingID)
+				shared.Logger.Warn("Received empty response from Gemini", "attempt", attempt, "trackingId", trackingID)
 				if attempt == maxRetries {
 					shared.JSONErrorResponse(w, trackingID, http.StatusInternalServerError, fmt.Sprintf("Received empty response from Gemini after %d retries", maxRetries))
 					return
@@ -312,22 +312,22 @@ func AnalyzeData(cfg *models.AppConfig) http.HandlerFunc {
 
 			analysisPart, ok := resp.Candidates[0].Content.Parts[0].(genai.Text)
 			if !ok {
-				shared.LogJSON("WARNING", fmt.Sprintf("Attempt %d: Gemini response part is not text", attempt), trackingID)
+				shared.Logger.Warn("Gemini response part is not text", "attempt", attempt, "trackingId", trackingID)
 				if attempt == maxRetries {
 					shared.JSONErrorResponse(w, trackingID, http.StatusInternalServerError, fmt.Sprintf("Invalid response format from Gemini after %d retries", maxRetries))
 					return
 				}
 				continue
 			}
-			shared.LogJSON("INFO", fmt.Sprintf("Successfully received analysis from Gemini in %s.", time.Since(geminiStartTime)), trackingID)
+			shared.Logger.Info("Successfully received analysis from Gemini.", "duration", time.Since(geminiStartTime).String(), "trackingId", trackingID)
 
 			finalJSON, err = cleanAndFinalizeAnalysis(string(analysisPart), trackingID, runDate)
 			if err == nil {
-				shared.LogJSON("INFO", "Successfully parsed and validated Gemini response.", trackingID)
+				shared.Logger.Info("Successfully parsed and validated Gemini response.", "trackingId", trackingID)
 				break
 			}
 
-			shared.LogJSON("WARNING", fmt.Sprintf("Attempt %d: Failed to clean and validate Gemini response: %s. Raw response: %s", attempt, err, string(analysisPart)), trackingID)
+			shared.Logger.Warn("Failed to clean and validate Gemini response", "attempt", attempt, "error", err, "rawResponse", string(analysisPart), "trackingId", trackingID)
 			if attempt == maxRetries {
 				shared.JSONErrorResponse(w, trackingID, http.StatusInternalServerError, fmt.Sprintf("Failed to process analysis from Gemini after %d retries", maxRetries))
 				return
@@ -338,11 +338,11 @@ func AnalyzeData(cfg *models.AppConfig) http.HandlerFunc {
 		analysisObjectName := fmt.Sprintf("%s_analyzed.json", trackingID)
 		err = shared.UploadToGCS(ctx, cfg.GCSBucketName, analysisObjectName, finalJSON)
 		if err != nil {
-			shared.LogJSON("ERROR", "Failed to upload final analysis to GCS: "+err.Error(), trackingID)
+			shared.Logger.Error("Failed to upload final analysis to GCS", "error", err, "trackingId", trackingID)
 			shared.JSONErrorResponse(w, trackingID, http.StatusInternalServerError, "Failed to upload analysis to GCS")
 			return
 		}
-		shared.LogJSON("INFO", fmt.Sprintf("Successfully uploaded analysis to GCS object: gs://%s/%s", cfg.GCSBucketName, analysisObjectName), trackingID)
+		shared.Logger.Info("Successfully uploaded analysis to GCS", "bucket", cfg.GCSBucketName, "object", analysisObjectName, "trackingId", trackingID)
 
 		nextActionURI := fmt.Sprintf("/ingest?trackingId=%s", trackingID)
 		response := models.APIResponse{
@@ -358,7 +358,7 @@ func AnalyzeData(cfg *models.AppConfig) http.HandlerFunc {
 		encoder := json.NewEncoder(w)
 		encoder.SetIndent("", "  ")
 		if err := encoder.Encode(response); err != nil {
-			shared.LogJSON("ERROR", "could not write JSON response: "+err.Error(), trackingID)
+			shared.Logger.Error("could not write JSON response", "error", err, "trackingId", trackingID)
 		}
 	}
 }
