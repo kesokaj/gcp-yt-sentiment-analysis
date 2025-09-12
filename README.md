@@ -90,6 +90,7 @@ This guide provides a streamlined approach to deploying the service on Google Cl
 2.  **Grant Permissions**: Grant the service account permissions to access GCS, BigQuery, Vertex AI (for Gemini), and Secret Manager.
 
     ```bash
+    # Build with SA
     gsutil iam ch \
       serviceAccount:${SERVICE_ACCOUNT_NAME}@${GCP_PROJECT}.iam.gserviceaccount.com:objectViewer \
       gs://${PROJECT_NUMBER}.cloudbuild.googleapis.com
