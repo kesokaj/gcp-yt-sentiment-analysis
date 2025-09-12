@@ -33,6 +33,8 @@ This guide provides a streamlined approach to deploying the service on Google Cl
         bigquery.googleapis.com \
         storage-component.googleapis.com \
         aiplatform.googleapis.com \
+        generativelanguage.googleapis.com \
+        youtube.googleapis.com \
         iap.googleapis.com --project=${GCP_PROJECT}
     ```
 
