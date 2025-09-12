@@ -14,12 +14,14 @@ This guide provides a streamlined approach to deploying the service on Google Cl
 
     ```bash
     export GCP_PROJECT="your-unique-project"
+    export GCP_PROJECT_NUMBER="your-project-number"
     export GCP_LOCATION="us-central1"       # Or your preferred region
     export AR_REPO_NAME="yt-sentiment-repo"
     export SERVICE_NAME="yt-sentiment"
     export GCS_BUCKET_NAME="your-unique-yt-sentiment-bucket" # <-- CHANGE THIS
     export BQ_DATASET="yt_sentiment_data"
     export SERVICE_ACCOUNT_NAME="yt-sentiment-sa"
+    export PROJECT_NUMBER=$(gcloud projects describe $GCP_PROJECT --format="value(projectNumber)")
     ```
 
 3.  **Enable APIs**: Enable all necessary Google Cloud services.
@@ -57,7 +59,9 @@ This guide provides a streamlined approach to deploying the service on Google Cl
 2.  **Build the Container**: Use Cloud Build to build the container from your source code and push it to Artifact Registry.
 
     ```bash
-    gcloud builds submit --tag ${GCP_LOCATION}-docker.pkg.dev/${GCP_PROJECT}/${AR_REPO_NAME}/${SERVICE_NAME}:latest
+    gcloud builds submit \
+      --tag ${GCP_LOCATION}-docker.pkg.dev/${GCP_PROJECT}/${AR_REPO_NAME}/${SERVICE_NAME}:latest \
+      --service-account=${SERVICE_ACCOUNT_NAME}@${GCP_PROJECT}.iam.gserviceaccount.com
     ```
 
 ### Step 3: Create GCS and BigQuery Resources
@@ -86,6 +90,10 @@ This guide provides a streamlined approach to deploying the service on Google Cl
 2.  **Grant Permissions**: Grant the service account permissions to access GCS, BigQuery, Vertex AI (for Gemini), and Secret Manager.
 
     ```bash
+    gsutil iam ch \
+      serviceAccount:${SERVICE_ACCOUNT_NAME}@${GCP_PROJECT}.iam.gserviceaccount.com:objectViewer \
+      gs://${PROJECT_NUMBER}.cloudbuild.googleapis.com
+    
     # GCS: To read/write JSON files
     gsutil iam ch serviceAccount:${SERVICE_ACCOUNT_NAME}@${GCP_PROJECT}.iam.gserviceaccount.com:objectAdmin gs://${GCS_BUCKET_NAME}
 
