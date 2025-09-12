@@ -94,6 +94,12 @@ This guide provides a streamlined approach to deploying the service on Google Cl
     # GCS: To read/write JSON files
     gsutil iam ch serviceAccount:${SERVICE_ACCOUNT_NAME}@${GCP_PROJECT}.iam.gserviceaccount.com:objectAdmin gs://${GCS_BUCKET_NAME}
 
+    # Artifact Repo
+    gcloud projects add-iam-policy-binding $GCP_PROJECT --member="serviceAccount:${SERVICE_ACCOUNT_NAME}@${GCP_PROJECT}.iam.gserviceaccount.com" --role="roles/artifactregistry.admin"
+
+    # Allow logging
+    gcloud projects add-iam-policy-binding $GCP_PROJECT --member="serviceAccount:${SERVICE_ACCOUNT_NAME}@${GCP_PROJECT}.iam.gserviceaccount.com" --role="roles/logging.logWriter"
+
     # GCS: Admin to handle buckets
     gcloud projects add-iam-policy-binding $GCP_PROJECT --member="serviceAccount:${SERVICE_ACCOUNT_NAME}@${GCP_PROJECT}.iam.gserviceaccount.com" --role="roles/storage.admin"
 
