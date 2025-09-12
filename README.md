@@ -61,7 +61,8 @@ This guide provides a streamlined approach to deploying the service on Google Cl
     ```bash
     gcloud builds submit \
       --tag ${GCP_LOCATION}-docker.pkg.dev/${GCP_PROJECT}/${AR_REPO_NAME}/${SERVICE_NAME}:latest \
-      --service-account=${SERVICE_ACCOUNT_NAME}@${GCP_PROJECT}.iam.gserviceaccount.com
+      --service-account=${SERVICE_ACCOUNT_NAME}@${GCP_PROJECT}.iam.gserviceaccount.com \
+      --logging=CLOUD_LOGGING_ONLY
     ```
 
 ### Step 3: Create GCS and BigQuery Resources
