@@ -62,7 +62,7 @@ This guide provides a streamlined approach to deploying the service on Google Cl
     gcloud builds submit \
       --tag ${GCP_LOCATION}-docker.pkg.dev/${GCP_PROJECT}/${AR_REPO_NAME}/${SERVICE_NAME}:latest \
       --service-account=projects/${GCP_PROJECT}/serviceAccounts/${SERVICE_ACCOUNT_NAME}@${GCP_PROJECT}.iam.gserviceaccount.com \
-      --gcs-log-dir=gs://${GCS_BUCKET_NAME}
+      --gcs-log-dir=gs://${GCS_BUCKET_NAME}/build/log --gcs-source-staging-dir=gs://${GCS_BUCKET_NAME}/build --region=$GCP_LOCATION
     ```
 
 ### Step 3: Create GCS and BigQuery Resources
