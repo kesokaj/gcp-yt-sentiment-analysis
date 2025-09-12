@@ -61,8 +61,8 @@ This guide provides a streamlined approach to deploying the service on Google Cl
     ```bash
     gcloud builds submit \
       --tag ${GCP_LOCATION}-docker.pkg.dev/${GCP_PROJECT}/${AR_REPO_NAME}/${SERVICE_NAME}:latest \
-      --service-account=${SERVICE_ACCOUNT_NAME}@${GCP_PROJECT}.iam.gserviceaccount.com \
-      --logging=CLOUD_LOGGING_ONLY
+      --service-account=projects/${GCP_PROJECT}/serviceAccounts/${SERVICE_ACCOUNT_NAME}@${GCP_PROJECT}.iam.gserviceaccount.com \
+      --gcs-log-dir=gs://${GCS_BUCKET_NAME}
     ```
 
 ### Step 3: Create GCS and BigQuery Resources
@@ -93,6 +93,9 @@ This guide provides a streamlined approach to deploying the service on Google Cl
     ```bash
     # GCS: To read/write JSON files
     gsutil iam ch serviceAccount:${SERVICE_ACCOUNT_NAME}@${GCP_PROJECT}.iam.gserviceaccount.com:objectAdmin gs://${GCS_BUCKET_NAME}
+
+    # GCS: Admin to handle buckets
+    gcloud projects add-iam-policy-binding $GCP_PROJECT --member="serviceAccount:${SERVICE_ACCOUNT_NAME}@${GCP_PROJECT}.iam.gserviceaccount.com" --role="roles/storage.admin"
 
     # BigQuery: To write data and run ingestion jobs
     gcloud projects add-iam-policy-binding $GCP_PROJECT --member="serviceAccount:${SERVICE_ACCOUNT_NAME}@${GCP_PROJECT}.iam.gserviceaccount.com" --role="roles/bigquery.dataEditor"
